@@ -1,0 +1,17 @@
+# Maven
+target/
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+dependency-reduced-pom.xml
+
+# Build / test output
+out.json
+*.log
+
+# Local secrets — never commit your API key
+.env
+*.env
+
+# OS / editor
+.DS_Store
+*.iml

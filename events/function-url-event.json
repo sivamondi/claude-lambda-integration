@@ -1,0 +1,18 @@
+{
+  "version": "2.0",
+  "routeKey": "$default",
+  "rawPath": "/",
+  "rawQueryString": "",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "requestContext": {
+    "http": {
+      "method": "POST",
+      "path": "/",
+      "protocol": "HTTP/1.1"
+    }
+  },
+  "body": "{\"prompt\":\"Say hello from AWS Lambda in one short sentence.\"}",
+  "isBase64Encoded": false
+}

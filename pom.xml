@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.cogniaix</groupId>
+    <artifactId>claude-lambda-hello</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>Hello World Claude Agent Lambda</name>
+    <description>A lightweight AWS Lambda (pure Java) that calls Claude via the official Anthropic Java SDK.</description>
+
+    <properties>
+        <!-- Compile to Java 21 bytecode so it runs on the AWS Lambda "java21" runtime,
+             even though you may build with a newer JDK locally. -->
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <anthropic.version>2.34.0</anthropic.version>
+        <lambda.core.version>1.2.3</lambda.core.version>
+        <lambda.events.version>3.11.4</lambda.events.version>
+        <jackson.version>2.17.2</jackson.version>
+    </properties>
+
+    <dependencies>
+        <!-- Official Anthropic SDK for Java: https://github.com/anthropics/anthropic-sdk-java -->
+        <dependency>
+            <groupId>com.anthropic</groupId>
+            <artifactId>anthropic-java</artifactId>
+            <version>${anthropic.version}</version>
+        </dependency>
+
+        <!-- AWS Lambda Java runtime interface (RequestHandler, Context). -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-lambda-java-core</artifactId>
+            <version>${lambda.core.version}</version>
+        </dependency>
+
+        <!-- Typed events. APIGatewayV2HTTPEvent/Response is the payload shape a
+             Lambda Function URL uses (HTTP API "2.0" format). -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-lambda-java-events</artifactId>
+            <version>${lambda.events.version}</version>
+        </dependency>
+
+        <!-- JSON (de)serialization for the request/response bodies. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!-- Produces target/claude-lambda-hello.jar -->
+        <finalName>claude-lambda-hello</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+
+            <!-- Shade builds a single "uber JAR" with all dependencies inside,
+                 which is exactly what AWS Lambda wants as a Java deployment package. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <filters>
+                                <filter>
+                                    <!-- Drop signature files and module descriptors that
+                                         break a merged uber JAR. -->
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>module-info.class</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <transformers>
+                                <!-- Merge META-INF/services entries (needed by Jackson/OkHttp). -->
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
