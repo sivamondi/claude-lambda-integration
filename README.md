@@ -45,9 +45,11 @@ Lambda Function URL you can `curl`.
 .
 ├── pom.xml                              # Maven build (deps + shade plugin)
 ├── src/main/java/com/cogniaix/claude/
-│   ├── HelloClaudeHandler.java          # the Lambda handler — all the logic
-│   ├── ClaudeRequest.java               # request body POJO
-│   └── ClaudeResponse.java              # response body POJO
+│   ├── HelloClaudeHandler.java          # simple agent — a single Claude Messages call
+│   ├── ToolAgentHandler.java            # tool-using agent — Claude + tools via BetaToolRunner
+│   ├── ClaudeRequest.java               # request body POJO (shared)
+│   ├── ClaudeResponse.java              # response body POJO (simple agent)
+│   └── AgentResponse.java               # response body POJO (tool agent)
 ├── deploy/
 │   ├── deploy.sh                        # one-command idempotent deploy (AWS CLI)
 │   └── trust-policy.json                # IAM trust policy for the Lambda role
@@ -283,10 +285,16 @@ aws iam delete-role --role-name claude-lambda-hello-role
 
 ## Going further
 
-This is deliberately a single, stateless API call. Natural next steps for a follow-up:
+The repo ships **two agents**, both behind the same lightweight Function URL pattern:
 
-- **Tool use / agentic loop** — let Claude call tools and iterate using the SDK's
-  `BetaToolRunner` (annotated tool classes), so it becomes a true multi-step agent.
+- **`HelloClaudeHandler`** — a single, stateless Claude Messages call.
+- **`ToolAgentHandler`** — a tool-using agent: Claude calls tools (a calculator and a
+  current-time lookup) and the SDK's `BetaToolRunner` drives the observe → act → observe
+  loop until it has an answer. Deploy it by pointing the Lambda handler at
+  `com.cogniaix.claude.ToolAgentHandler::handleRequest`.
+
+Natural next steps from here:
+
 - **Streaming** — stream tokens back with `client.messages().createStreaming(...)`
   (pairs well with a Function URL using response streaming).
 - **Conversation memory** — persist message history in DynamoDB for multi-turn chats.
