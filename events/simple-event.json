@@ -1,0 +1,5 @@
+{
+  "prompt": "Explain in two sentences why AWS Lambda is a natural fit for AI agents.",
+  "system": "You are a concise technical writer.",
+  "maxTokens": 512
+}

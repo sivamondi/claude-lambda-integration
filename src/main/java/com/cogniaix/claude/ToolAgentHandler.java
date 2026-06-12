@@ -3,8 +3,6 @@ package com.cogniaix.claude;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.LambdaLogger;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
-import com.amazonaws.services.lambda.runtime.events.APIGatewayV2HTTPEvent;
-import com.amazonaws.services.lambda.runtime.events.APIGatewayV2HTTPResponse;
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.helpers.BetaToolRunner;
@@ -12,45 +10,45 @@ import com.anthropic.models.beta.messages.BetaMessage;
 import com.anthropic.models.beta.messages.MessageCreateParams;
 import com.fasterxml.jackson.annotation.JsonClassDescription;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
-import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
- * A lightweight <em>tool-using</em> Claude agent on AWS Lambda.
+ * Event-driven tool-using Claude agent on AWS Lambda.
  *
- * <p>This is the same shape as {@link HelloClaudeHandler} — one stateless handler behind a
- * Function URL — but instead of a single Messages call, it gives Claude tools and lets the
- * SDK's {@link BetaToolRunner} drive the observe → reason → act loop until Claude has an
- * answer. That loop is what turns a single call into an agent.
+ * <p>Same event format as {@link ClaudeEventHandler}, but this handler gives Claude
+ * tools and lets the SDK's {@link BetaToolRunner} drive the observe → act → observe
+ * loop until Claude produces a final answer.
  *
- * <p>The tools below are deliberately trivial and dependency-free (current time + a
- * calculator) so the example stays lightweight. A tool is just a class that:
+ * <p>Triggered by any Lambda event source — AWS Console test, SQS, EventBridge,
+ * SNS, or a custom scheduler. No HTTP layer required.
+ *
+ * <p>Event format:
+ * <pre>
+ * {
+ *   "prompt":    "What is 1234 × 5678, and what time is it in New York?",
+ *   "system":    "You are a helpful assistant.",  // optional
+ *   "maxTokens": 1024                             // optional
+ * }
+ * </pre>
+ *
+ * <p>A tool is just a class that implements {@link Supplier}&lt;String&gt; — its
+ * {@code get()} runs the tool — with annotations the SDK turns into JSON schema:
  * <ul>
- *   <li>implements {@link Supplier}&lt;String&gt; — its {@code get()} runs the tool and
- *       returns the result the SDK feeds back to Claude,</li>
- *   <li>is annotated with {@code @JsonClassDescription} (what the tool does),</li>
- *   <li>has fields annotated with {@code @JsonPropertyDescription} (the tool's parameters).</li>
+ *   <li>{@code @JsonClassDescription} — what the tool does (shown to Claude)</li>
+ *   <li>{@code @JsonPropertyDescription} — each parameter's meaning</li>
  * </ul>
- * The SDK derives the tool's JSON schema from the class and its name from the class name
- * (e.g. {@code CurrentTime} → {@code current_time}).
  *
  * <p>Lambda handler string: {@code com.cogniaix.claude.ToolAgentHandler::handleRequest}
  */
-public class ToolAgentHandler
-        implements RequestHandler<APIGatewayV2HTTPEvent, APIGatewayV2HTTPResponse> {
-
-    private static final ObjectMapper MAPPER = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+public class ToolAgentHandler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
 
     private static final String MODEL = envOrDefault("ANTHROPIC_MODEL", "claude-opus-4-8");
     private static final long DEFAULT_MAX_TOKENS = 1024L;
@@ -113,36 +111,32 @@ public class ToolAgentHandler
     // ---- Handler -----------------------------------------------------------------------
 
     @Override
-    public APIGatewayV2HTTPResponse handleRequest(APIGatewayV2HTTPEvent event, Context context) {
+    public Map<String, Object> handleRequest(Map<String, Object> event, Context context) {
         LambdaLogger log = context.getLogger();
         try {
-            ClaudeRequest request = parseBody(event);
-            if (request == null || request.prompt == null || request.prompt.isBlank()) {
-                return json(400, Map.of(
-                        "error", "Missing 'prompt' in request body.",
-                        "usage", "POST a JSON body like "
-                                + "{\"prompt\": \"What is 1234 * 5678, and what time is it?\"}"));
+            String prompt = (String) event.get("prompt");
+            if (prompt == null || prompt.isBlank()) {
+                return error("Missing 'prompt' in event. "
+                        + "Expected: {\"prompt\": \"What is 99 × 99 and what time is it in Tokyo?\"}");
             }
 
-            long maxTokens = (request.maxTokens != null && request.maxTokens > 0)
-                    ? request.maxTokens
-                    : DEFAULT_MAX_TOKENS;
+            String system = (String) event.get("system");
+            long maxTokens = longFrom(event.get("maxTokens"), DEFAULT_MAX_TOKENS);
 
             MessageCreateParams.Builder params = MessageCreateParams.builder()
                     .model(MODEL)
                     .maxTokens(maxTokens)
-                    // Strict, schema-validated tool inputs (matches the SDK's tool-runner example).
                     .putAdditionalHeader("anthropic-beta", "structured-outputs-2025-11-13")
-                    .addUserMessage(request.prompt)
+                    .addUserMessage(prompt)
                     .addTool(CurrentTime.class)
                     .addTool(Calculator.class);
 
-            if (request.system != null && !request.system.isBlank()) {
-                params.system(request.system);
+            if (system != null && !system.isBlank()) {
+                params.system(system);
             }
 
             // The tool runner IS the agent loop: each iteration is one model turn, with the
-            // SDK executing any requested tools in between and feeding results back to Claude.
+            // SDK executing any requested tools and feeding results back to Claude.
             BetaToolRunner runner = client.beta().messages().toolRunner(params.build());
 
             BetaMessage last = null;
@@ -157,7 +151,7 @@ public class ToolAgentHandler
             }
 
             if (last == null) {
-                return json(502, Map.of("error", "The agent produced no response."));
+                return error("The agent produced no response.");
             }
 
             String reply = last.content().stream()
@@ -165,54 +159,38 @@ public class ToolAgentHandler
                     .map(textBlock -> textBlock.text())
                     .collect(Collectors.joining());
 
-            AgentResponse out = new AgentResponse();
-            out.reply = reply;
-            out.model = MODEL;
-            out.turns = turns;
-            out.inputTokens = inputTokens;
-            out.outputTokens = outputTokens;
-
-            return json(200, out);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("reply", reply);
+            out.put("model", MODEL);
+            out.put("turns", turns);
+            out.put("inputTokens", inputTokens);
+            out.put("outputTokens", outputTokens);
+            return out;
 
         } catch (Exception e) {
-            log.log("Error handling request: " + e);
-            return json(500, Map.of("error", e.getClass().getSimpleName() + ": " + e.getMessage()));
+            log.log("Error: " + e);
+            return error(e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
 
     // ---- Helpers -----------------------------------------------------------------------
 
-    private ClaudeRequest parseBody(APIGatewayV2HTTPEvent event) throws Exception {
-        if (event == null || event.getBody() == null) {
-            return null;
+    private static long longFrom(Object val, long fallback) {
+        if (val instanceof Number) {
+            long v = ((Number) val).longValue();
+            return v > 0 ? v : fallback;
         }
-        String body = event.getBody();
-        if (Boolean.TRUE.equals(event.getIsBase64Encoded())) {
-            body = new String(Base64.getDecoder().decode(body), StandardCharsets.UTF_8);
-        }
-        if (body.isBlank()) {
-            return null;
-        }
-        return MAPPER.readValue(body, ClaudeRequest.class);
+        return fallback;
     }
 
-    private APIGatewayV2HTTPResponse json(int statusCode, Object payload) {
-        String body;
-        try {
-            body = MAPPER.writeValueAsString(payload);
-        } catch (Exception e) {
-            statusCode = 500;
-            body = "{\"error\":\"Failed to serialize response\"}";
-        }
-        return APIGatewayV2HTTPResponse.builder()
-                .withStatusCode(statusCode)
-                .withHeaders(Map.of("Content-Type", "application/json"))
-                .withBody(body)
-                .build();
+    private static Map<String, Object> error(String msg) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("error", msg);
+        return m;
     }
 
     private static String envOrDefault(String key, String fallback) {
-        String value = System.getenv(key);
-        return (value == null || value.isBlank()) ? fallback : value;
+        String v = System.getenv(key);
+        return (v == null || v.isBlank()) ? fallback : v;
     }
 }

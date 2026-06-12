@@ -1,17 +1,22 @@
 #!/usr/bin/env bash
 #
-# One-command deploy for the Hello World Claude Agent Lambda.
+# One-command deploy for the Event-Driven Claude Agent Lambda.
 #
 # It is idempotent: run it once to create everything, run it again to ship code
 # or config changes. It uses only the AWS CLI + Maven — no SAM, CDK, or Terraform.
+#
+# The Lambda is invoked by events (AWS Console test, SQS, EventBridge, SNS, etc.).
+# No Function URL or API Gateway is created — integrate with your event source of choice.
 #
 # Required:
 #   ANTHROPIC_API_KEY   Your Anthropic API key (sk-ant-...)
 #
 # Optional (sensible defaults shown):
-#   FUNCTION_NAME=hello-claude
-#   ROLE_NAME=claude-lambda-hello-role
+#   FUNCTION_NAME=claude-agent
+#   ROLE_NAME=claude-lambda-role
 #   ANTHROPIC_MODEL=claude-opus-4-8
+#   HANDLER=com.cogniaix.claude.ClaudeEventHandler::handleRequest
+#           (use com.cogniaix.claude.ToolAgentHandler::handleRequest for the tool-using agent)
 #   MEMORY_SIZE=1024            # MB  (more memory = more CPU = faster cold start)
 #   TIMEOUT=60                  # seconds
 #   AWS_REGION=<your aws cli default>
@@ -19,17 +24,21 @@
 # Usage:
 #   export ANTHROPIC_API_KEY=sk-ant-...
 #   ./deploy/deploy.sh
+#
+# Test from the AWS Console after deploy:
+#   Lambda → Functions → claude-agent → Test tab
+#   Paste events/simple-event.json or events/agent-event.json as the test payload.
 
 set -euo pipefail
 
 # --- Config -----------------------------------------------------------------
-FUNCTION_NAME="${FUNCTION_NAME:-hello-claude}"
-ROLE_NAME="${ROLE_NAME:-claude-lambda-hello-role}"
+FUNCTION_NAME="${FUNCTION_NAME:-claude-agent}"
+ROLE_NAME="${ROLE_NAME:-claude-lambda-role}"
 ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-claude-opus-4-8}"
 MEMORY_SIZE="${MEMORY_SIZE:-1024}"
 TIMEOUT="${TIMEOUT:-60}"
 RUNTIME="java21"
-HANDLER="com.cogniaix.claude.HelloClaudeHandler::handleRequest"
+HANDLER="${HANDLER:-com.cogniaix.claude.ClaudeEventHandler::handleRequest}"
 
 # Resolve paths relative to this script so it works from any directory.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -96,35 +105,23 @@ else
   aws lambda wait function-active-v2 --function-name "$FUNCTION_NAME"
 fi
 
-# --- Function URL (public, auth-type NONE) ----------------------------------
-# WARNING: auth-type NONE makes the endpoint publicly invokable by anyone who
-# has the URL. Fine for a demo; use AWS_IAM for anything real.
-if aws lambda get-function-url-config --function-name "$FUNCTION_NAME" >/dev/null 2>&1; then
-  echo "==> Function URL already configured"
-else
-  echo "==> Creating public Function URL"
-  aws lambda create-function-url-config \
-    --function-name "$FUNCTION_NAME" \
-    --auth-type NONE >/dev/null
-  aws lambda add-permission \
-    --function-name "$FUNCTION_NAME" \
-    --statement-id FunctionURLAllowPublicAccess \
-    --action lambda:InvokeFunctionUrl \
-    --principal "*" \
-    --function-url-auth-type NONE >/dev/null
-fi
-
-FUNCTION_URL="$(aws lambda get-function-url-config \
-  --function-name "$FUNCTION_NAME" \
-  --query FunctionUrl --output text)"
-
 echo ""
 echo "============================================================"
-echo " Deployed: $FUNCTION_NAME  (model: $ANTHROPIC_MODEL)"
-echo " Function URL: $FUNCTION_URL"
+echo " Deployed: $FUNCTION_NAME  (handler: $HANDLER)"
+echo " Model:    $ANTHROPIC_MODEL"
 echo "============================================================"
 echo ""
-echo "Try it:"
-echo "  curl -sS -X POST \"$FUNCTION_URL\" \\"
-echo "    -H 'Content-Type: application/json' \\"
-echo "    -d '{\"prompt\":\"In one sentence, what is AWS Lambda?\"}'"
+echo "Test from the AWS Console:"
+echo "  Lambda → Functions → $FUNCTION_NAME → Test tab"
+echo "  Paste events/simple-event.json as the test payload."
+echo ""
+echo "Or invoke via the AWS CLI:"
+echo "  aws lambda invoke \\"
+echo "    --function-name $FUNCTION_NAME \\"
+echo "    --payload file://events/simple-event.json \\"
+echo "    --cli-binary-format raw-in-base64-out \\"
+echo "    response.json && cat response.json"
+echo ""
+echo "Connect to an event source when ready:"
+echo "  SQS:         aws lambda create-event-source-mapping --function-name $FUNCTION_NAME --event-source-arn <queue-arn>"
+echo "  EventBridge: create a rule that targets this Lambda"

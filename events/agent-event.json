@@ -1,0 +1,5 @@
+{
+  "prompt": "What is 1234 multiplied by 5678? Also, what is the current time in New York?",
+  "system": "You are a helpful assistant with access to calculation and time-lookup tools.",
+  "maxTokens": 1024
+}
