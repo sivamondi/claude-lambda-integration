@@ -1,4 +1,4 @@
-# Claude Agent on AWS Lambda in Java — Event-Driven, No Framework
+# Claude Agent on AWS Lambda in Java. Event-Driven, No Framework.
 
 ---
 
@@ -9,7 +9,7 @@ Spring, no Quarkus. The result is a small deployment JAR that fits comfortably i
 Lambda's 50 MB package limit, and a single handler that works with the AWS Console, SQS,
 EventBridge, or any other Lambda event source.
 
-Code: [github.com/sivamondi/claude-lambda-integration](https://github.com/sivamondi/claude-lambda-integration)
+Code [github.com/sivamondi/claude-lambda-integration](https://github.com/sivamondi/claude-lambda-integration)
 
 ---
 
@@ -22,7 +22,7 @@ a result. There is no long-running process required.
 | LLM agent | AWS Lambda |
 |---|---|
 | Triggered by a message or event | Invoked by SQS, EventBridge, S3, SNS, HTTP, schedules |
-| Stateless per call — context in, answer out | Stateless compute — no in-process state between invocations |
+| Stateless per call, context in and answer out | Stateless compute with no in-process state between invocations |
 | Runs in bursts, idle otherwise | Scales to zero; billed only when running |
 
 ---
@@ -34,7 +34,7 @@ Quarkus application with an embedded web server typically exceeds that before an
 logic is added.
 
 The [Anthropic Java SDK](https://github.com/anthropics/anthropic-sdk-java) is a single
-library with no embedded server:
+library with no embedded server.
 
 ```xml
 <dependency>
@@ -44,8 +44,8 @@ library with no embedded server:
 </dependency>
 ```
 
-The full dependency set for this project — SDK, two AWS Lambda runtime jars, and Jackson
-— produces a shaded uber JAR well under the Lambda size limit. Cold starts are faster too,
+The full dependency set for this project, SDK, two AWS Lambda runtime jars, and Jackson,
+produces a shaded uber JAR well under the Lambda size limit. Cold starts are faster too,
 because there is no framework scan at startup.
 
 ---
@@ -53,7 +53,7 @@ because there is no framework scan at startup.
 ## Event format
 
 The handler accepts a plain `Map<String, Object>`, so the same JSON structure works from
-the AWS Console, from an SQS message body, or from an EventBridge rule detail:
+the AWS Console, from an SQS message body, or from an EventBridge rule detail.
 
 ```json
 {
@@ -66,7 +66,7 @@ the AWS Console, from an SQS message body, or from an EventBridge rule detail:
 `system` and `maxTokens` are optional.
 
 ```
-  Event source (Console / SQS / EventBridge / SNS / …)
+  Event source (Console / SQS / EventBridge / SNS / ...)
           │
           │  { "prompt": "...", "system": "...", "maxTokens": 1024 }
           ▼
@@ -86,7 +86,7 @@ the AWS Console, from an SQS message body, or from an EventBridge rule detail:
 ### Initialise the client once
 
 Lambda reuses the same handler instance across warm invocations. Create the SDK client as
-a field so it is initialised once and the connection pool is reused on every warm call:
+a field so it is initialised once and the connection pool is reused on every warm call.
 
 ```java
 public class ClaudeEventHandler
@@ -144,10 +144,8 @@ The response includes token counts so you can track cost per invocation.
 
 ## Testing from the AWS Console
 
-After deploying:
-
-1. Open **Lambda → Functions → claude-agent → Test**.
-2. Paste `events/simple-event.json` as the test payload:
+After deploying, open **Lambda → Functions → claude-agent → Test**.
+Paste `events/simple-event.json` as the test payload.
 
 ```json
 {
@@ -157,7 +155,7 @@ After deploying:
 }
 ```
 
-3. Click **Test**. The result panel shows the response:
+Click **Test**. The result panel shows the response.
 
 ```json
 {
@@ -168,7 +166,7 @@ After deploying:
 }
 ```
 
-Or use the CLI:
+Or use the CLI.
 
 ```bash
 aws lambda invoke \
@@ -184,10 +182,10 @@ aws lambda invoke \
 
 A single `create()` call is one turn. To let Claude call external tools and reason over
 the results before answering, the [Anthropic Java SDK](https://github.com/anthropics/anthropic-sdk-java)
-provides `BetaToolRunner`, which drives the model ↔ tool loop automatically.
+provides `BetaToolRunner`, which drives the model tool loop automatically.
 
 A tool is a class that implements `Supplier<String>`. Its `get()` method runs the tool
-and returns the result. Annotations provide the JSON schema Claude uses to call it:
+and returns the result. Annotations provide the JSON schema Claude uses to call it.
 
 ```java
 @JsonClassDescription("Performs one arithmetic operation on two numbers.")
@@ -216,7 +214,7 @@ public static class Calculator implements Supplier<String> {
 ```
 
 Register the tools and iterate the runner. Each iteration is one model turn; the SDK
-calls the tools and feeds results back to Claude between turns:
+calls the tools and feeds results back to Claude between turns.
 
 ```java
 BetaToolRunner runner = client.beta().messages().toolRunner(
@@ -236,7 +234,7 @@ for (BetaMessage turn : runner) {
 }
 ```
 
-Test with `events/agent-event.json`:
+Test with `events/agent-event.json`.
 
 ```json
 {
@@ -246,7 +244,7 @@ Test with `events/agent-event.json`:
 }
 ```
 
-Response:
+Sample response.
 
 ```json
 {
@@ -259,7 +257,7 @@ Response:
 ```
 
 `turns` shows how many model round-trips the agent made. The deployment does not change
-when you add tools — it is still the same JAR, same handler, same Lambda function.
+when you add tools; it is still the same JAR, same handler, same Lambda function.
 
 ---
 
@@ -268,7 +266,8 @@ when you add tools — it is still the same JAR, same handler, same Lambda funct
 Because the handler takes a `Map<String, Object>`, connecting it to a real event source
 requires no code changes.
 
-**SQS** — Lambda parses each SQS record's JSON body into the map automatically:
+For **SQS**, attach the queue as an event source mapping. Lambda parses each SQS record's
+JSON body into the map automatically.
 
 ```bash
 aws lambda create-event-source-mapping \
@@ -277,16 +276,17 @@ aws lambda create-event-source-mapping \
   --batch-size 1
 ```
 
-Send a message to the queue:
+Send a message to the queue.
+
 ```json
 {"prompt": "Summarize this support ticket: user reports slow checkout on mobile."}
 ```
 
-**EventBridge** — create a rule targeting the Lambda. The `detail` object in your event
-becomes the map the handler receives. A scheduled rule (cron) turns the agent into a
-periodic job.
+For **EventBridge**, create a rule targeting the Lambda. The `detail` object in your event
+becomes the map the handler receives. A scheduled rule with a cron expression turns the
+agent into a periodic job.
 
-**SNS, S3, or custom invokers** follow the same pattern. The event source adapter is
+For **SNS, S3, or custom invokers** the same pattern applies. The event source adapter is
 thin because the handler input is just a map.
 
 ---
@@ -294,24 +294,24 @@ thin because the handler input is just a map.
 ## Handling state
 
 Lambda does not preserve in-process state between invocations. For agents that need
-memory across turns, keep state outside the function:
+memory across turns, keep state outside the function.
 
-- **Conversation history** — store in DynamoDB keyed by session ID; load at the start of
-  each turn, append the new exchange, write back.
-- **Long-term knowledge** — query a vector store or external API as a tool.
-- **Secrets** — retrieve from AWS Secrets Manager or SSM Parameter Store at init time
-  (once per warm environment, not per request).
+- Store **conversation history** in DynamoDB keyed by session ID; load at the start of
+  each turn, append the new exchange, and write back.
+- For **long-term knowledge**, query a vector store or external API as a tool.
+- Retrieve **secrets** from AWS Secrets Manager or SSM Parameter Store at init time,
+  once per warm environment and not per request.
 
 ---
 
 ## Configuration tips
 
-- **Model selection** — the `ANTHROPIC_MODEL` environment variable switches models without
-  a code change. Use `claude-haiku-4-5` for high-volume or latency-sensitive workloads;
-  it is faster and cheaper than Opus.
-- **Token cap** — `maxTokens` is a cost and latency ceiling. Set it per use case.
-- **Memory** — Lambda allocates more CPU as memory increases, which speeds up cold starts
-  and JSON processing. 1024 MB is a reasonable starting point for this workload.
+- **Model selection** is controlled by the `ANTHROPIC_MODEL` environment variable, which
+  switches models without a code change. Use `claude-haiku-4-5` for high-volume or
+  latency-sensitive workloads; it is faster and cheaper than Opus.
+- Set **`maxTokens`** as a cost and latency ceiling appropriate to each use case.
+- Increasing Lambda **memory** also increases CPU, which speeds up cold starts and JSON
+  processing. 1024 MB is a reasonable starting point for this workload.
 
 ---
 
@@ -324,6 +324,6 @@ for testing and connects to SQS, EventBridge, or any other Lambda trigger with n
 changes. Adding tools upgrades the handler from a single model call to a full agent loop,
 with no change to the deployment.
 
-**SDK:** [github.com/anthropics/anthropic-sdk-java](https://github.com/anthropics/anthropic-sdk-java)
+**SDK** [github.com/anthropics/anthropic-sdk-java](https://github.com/anthropics/anthropic-sdk-java)
 
-**Code:** [github.com/sivamondi/claude-lambda-integration](https://github.com/sivamondi/claude-lambda-integration)
+**Code** [github.com/sivamondi/claude-lambda-integration](https://github.com/sivamondi/claude-lambda-integration)
