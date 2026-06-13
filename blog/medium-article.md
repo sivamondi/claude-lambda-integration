@@ -27,13 +27,14 @@ a result. There is no long-running process required.
 
 ---
 
-## Why the Anthropic Java SDK fits Lambda
+## Why the [Anthropic Java SDK](https://github.com/anthropics/anthropic-sdk-java) fits Lambda
 
 Lambda's deployment package limit is 50 MB zipped (250 MB unzipped). A Spring Boot or
 Quarkus application with an embedded web server typically exceeds that before any business
 logic is added.
 
-The Anthropic Java SDK is a single library with no embedded server:
+The [Anthropic Java SDK](https://github.com/anthropics/anthropic-sdk-java) is a single
+library with no embedded server:
 
 ```xml
 <dependency>
@@ -182,8 +183,8 @@ aws lambda invoke \
 ## Adding tools: the agent loop
 
 A single `create()` call is one turn. To let Claude call external tools and reason over
-the results before answering, the SDK provides `BetaToolRunner`, which drives the
-model ↔ tool loop automatically.
+the results before answering, the [Anthropic Java SDK](https://github.com/anthropics/anthropic-sdk-java)
+provides `BetaToolRunner`, which drives the model ↔ tool loop automatically.
 
 A tool is a class that implements `Supplier<String>`. Its `get()` method runs the tool
 and returns the result. Annotations provide the JSON schema Claude uses to call it:
@@ -316,10 +317,13 @@ memory across turns, keep state outside the function:
 
 ## Summary
 
-The Anthropic Java SDK is small enough to package as a Lambda deployment JAR without
-hitting size limits. The handler is a single class with no framework dependencies. The
-plain-map event format works from the AWS Console for testing and connects to SQS,
-EventBridge, or any other Lambda trigger with no code changes. Adding tools upgrades the
-handler from a single model call to a full agent loop, with no change to the deployment.
+The [Anthropic Java SDK](https://github.com/anthropics/anthropic-sdk-java) is small enough
+to package as a Lambda deployment JAR without hitting size limits. The handler is a single
+class with no framework dependencies. The plain-map event format works from the AWS Console
+for testing and connects to SQS, EventBridge, or any other Lambda trigger with no code
+changes. Adding tools upgrades the handler from a single model call to a full agent loop,
+with no change to the deployment.
+
+**SDK:** [github.com/anthropics/anthropic-sdk-java](https://github.com/anthropics/anthropic-sdk-java)
 
 **Code:** [github.com/sivamondi/claude-lambda-integration](https://github.com/sivamondi/claude-lambda-integration)
